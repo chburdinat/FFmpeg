@@ -1443,7 +1443,7 @@ static int64_t calc_max_seg_no(struct representation *pls, DASHContext *c)
             }
         }
     } else if (c->is_live && pls->fragment_duration) {
-        num = pls->first_seq_no + (((get_current_time_in_sec() - c->availability_start_time)) * pls->fragment_timescale)  / pls->fragment_duration;
+        num = pls->first_seq_no + (((get_current_time_in_sec() - 2 - c->availability_start_time)) * pls->fragment_timescale)  / pls->fragment_duration;
     } else if (pls->fragment_duration) {
         num = pls->first_seq_no + av_rescale_rnd(1, c->media_presentation_duration * pls->fragment_timescale, pls->fragment_duration, AV_ROUND_UP);
     }
@@ -1796,7 +1796,16 @@ restart:
                 goto end;
             }
             av_log(v->parent, AV_LOG_WARNING, "Failed to open fragment of playlist\n");
-            v->cur_seq_no++;
+            
+            
+            if (!c->is_live) {
+                 v->cur_seq_no++;
+             } else {
+             	int max_seq_no = calc_max_seg_no(v, c);
+             	if (max_seq_no > v->cur_seq_no)
+             		v->cur_seq_no++;
+             }
+            
             goto restart;
         }
     }
@@ -1822,10 +1831,18 @@ restart:
     if (ret > 0)
         goto end;
 
-    if (c->is_live || v->cur_seq_no < v->last_seq_no) {
+    if (v->cur_seq_no < v->last_seq_no) {
         if (!v->is_restart_needed)
             v->cur_seq_no++;
         v->is_restart_needed = 1;
+    } else if (c->is_live) {
+         if (!v->is_restart_needed) {
+             while (v->cur_seq_no == calc_max_seg_no(v, c)) {
+      	          av_usleep(50000); 
+             }
+             v->cur_seq_no++;
+         }
+         v->is_restart_needed = 1;
     }
 
 end:
